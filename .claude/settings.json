@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source $HOME/.cargo/env)",
+      "Bash(export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/28.2.13676358)",
+      "Bash(BUILD_DIR=/mnt/A4CC6455CC6423B0/Github/android_lidar_view/zenoh_android/build/android/arm64-v8a)",
+      "Bash(ninja -C $BUILD_DIR -t targets)"
+    ]
+  }
+}

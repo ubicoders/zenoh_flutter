@@ -43,3 +43,12 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Zenoh native build workspace
+/zenoh_android/
+/zenoh_c_build/
+
+# Ensure zenoh_dart package contents and .so files are tracked
+!/packages/zenoh_dart/
+!/packages/zenoh_dart/**
+!/packages/zenoh_dart/**/*.so
