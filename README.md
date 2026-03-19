@@ -24,9 +24,10 @@ cargo install cargo-ndk
 ```
 
 ### 3. Build the Binaries
-Clone the official `zenoh-c` repository somewhere (e.g., inside a temporary `zenoh_c_build` folder):
+Clone the official `zenoh-c` repository somewhere (e.g., inside a temporary `zenoh_c_build` folder).
+*Note: We explicitly specify `--branch 1.6.2` to exactly match the native version officially tied to `zenoh_dart` 0.2.0 bindings.*
 ```bash
-git clone https://github.com/eclipse-zenoh/zenoh-c.git zenoh_c_build
+git clone --branch 1.6.2 https://github.com/eclipse-zenoh/zenoh-c.git zenoh_c_build
 cd zenoh_c_build
 ```
 
