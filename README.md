@@ -2,9 +2,9 @@
 
 A new Flutter project.
 
-## Building Zenoh C for Android
+## Building Zenoh C for Android (Versioned)
 
-If you are cloning this project onto a new machine or need to rebuild the `zenoh-c` native libraries from scratch for Android, follow these precise steps to manually compile them:
+If you need to rebuild the `zenoh-c` native libraries from scratch for Android, follow these precise steps to manually compile them and place them into the version-controlled structure:
 
 ### 1. Prerequisites
 Ensure you have the following installed on your machine:
@@ -15,48 +15,50 @@ Ensure you have the following installed on your machine:
 Add the necessary Android architecture targets to your Rust toolchain:
 ```bash
 rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
-```
-*(Note: If the build fails because of a missing `core` crate, make sure you append `--toolchain <version>` to match your active channel, e.g., `--toolchain 1.93.0`)*
-
-Next, install `cargo-ndk` which effortlessly handles cross-compiling for Android:
-```bash
 cargo install cargo-ndk
 ```
 
-### 3. Build the Binaries
-Clone the official `zenoh-c` repository somewhere (e.g., inside a temporary `zenoh_c_build` folder).
-*Note: We explicitly specify `--branch 1.6.2` to exactly match the native version officially tied to `zenoh_dart` 0.2.0 bindings.*
+### 3. Build a Specific Version (e.g. 1.6.2 or 1.8.0)
+Clone the official `zenoh-c` repository into a temporary folder:
 ```bash
-git clone --branch 1.6.2 https://github.com/eclipse-zenoh/zenoh-c.git zenoh_c_build
+git clone https://github.com/eclipse-zenoh/zenoh-c.git zenoh_c_build
 cd zenoh_c_build
 ```
 
-Export your NDK home variable to point to your NDK installation. For example:
+Checkout the exact version tag you want to build (for example, `1.6.2` or `1.8.0`):
 ```bash
-export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/28.2.13676358
+git fetch --tags
+git checkout 1.6.2
 ```
 
-Compile for all Android architectures at once using `cargo-ndk`:
+Export your NDK home variable and compile for all architectures:
 ```bash
+export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/28.2.13676358
 cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -t x86 build --release
 ```
 
-### 4. Deploy the Libraries to the Project
-Once the build concludes, copy the generated `.so` files out of the `target/` directory and into your app's `jniLibs` folder so that Flutter can bundle them into your APK:
+### 4. Deploy the Libraries to the Version Folder
+Once the build concludes, copy the `.so` files out of the `target/` directory and directly into the versioned local package folder:
 
 ```bash
 cd ..
-# Ensure the subdirectories exist
-mkdir -p android/app/src/main/jniLibs/arm64-v8a
-mkdir -p android/app/src/main/jniLibs/armeabi-v7a
-mkdir -p android/app/src/main/jniLibs/x86_64
-mkdir -p android/app/src/main/jniLibs/x86
+VERSION="1.6.2" # Change this to the version you just built!
 
-# Copy the libraries
-cp zenoh_c_build/target/aarch64-linux-android/release/libzenohc.so android/app/src/main/jniLibs/arm64-v8a/
-cp zenoh_c_build/target/armv7-linux-androideabi/release/libzenohc.so android/app/src/main/jniLibs/armeabi-v7a/
-cp zenoh_c_build/target/x86_64-linux-android/release/libzenohc.so android/app/src/main/jniLibs/x86_64/
-cp zenoh_c_build/target/i686-linux-android/release/libzenohc.so android/app/src/main/jniLibs/x86/
+mkdir -p packages/zenoh_dart/native/android/$VERSION/arm64-v8a
+mkdir -p packages/zenoh_dart/native/android/$VERSION/armeabi-v7a
+mkdir -p packages/zenoh_dart/native/android/$VERSION/x86_64
+mkdir -p packages/zenoh_dart/native/android/$VERSION/x86
+
+cp zenoh_c_build/target/aarch64-linux-android/release/libzenohc.so packages/zenoh_dart/native/android/$VERSION/arm64-v8a/
+cp zenoh_c_build/target/armv7-linux-androideabi/release/libzenohc.so packages/zenoh_dart/native/android/$VERSION/armeabi-v7a/
+cp zenoh_c_build/target/x86_64-linux-android/release/libzenohc.so packages/zenoh_dart/native/android/$VERSION/x86_64/
+cp zenoh_c_build/target/i686-linux-android/release/libzenohc.so packages/zenoh_dart/native/android/$VERSION/x86/
 ``` 
 
-*You can also copy the libraries directly into `packages/zenoh_dart/native/android/<arch>/` if you are working with the plugin package locally.*
+### 5. Link the Active Version to Android jniLibs
+To select which built version gets bundled into your Android app, run the helper script provided at the project root:
+
+```bash
+./copy_zenoh_libs.sh 1.6.2
+```
+This script will automatically copy the libraries from your newly deployed `packages/zenoh_dart/native/android/$VERSION/` folder straight into `android/app/src/main/jniLibs/` making them active for your next Flutter build!
