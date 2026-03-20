@@ -23,8 +23,8 @@ echo "Copying Zenoh C libraries for version $VERSION..."
 for arch in arm64-v8a armeabi-v7a x86 x86_64; do
     if [ -f "$SRC_DIR/$arch/libzenohc.so" ]; then
         mkdir -p "$DEST_DIR/$arch"
-        cp "$SRC_DIR/$arch/libzenohc.so" "$DEST_DIR/$arch/"
-        echo " -> Copied $arch"
+        cp "$SRC_DIR/$arch/libzenohc.so" "$DEST_DIR/$arch/libzenoh.so"
+        echo " -> Copied $arch as libzenoh.so"
     else
         echo " -> Warning: libzenohc.so for $arch not found in $SRC_DIR"
     fi
