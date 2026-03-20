@@ -57,6 +57,9 @@ class _ZenohSubscriberPageState extends State<ZenohSubscriberPage> {
 
   // Connection config state
   String _protocol = 'tcp';
+  String _topic = 'test/**';
+  final List<String> _discoveredTopics = ['test/**'];
+  bool _isDiscovering = false;
   late final TextEditingController _ipController;
   late final TextEditingController _portController;
 
@@ -96,6 +99,58 @@ class _ZenohSubscriberPageState extends State<ZenohSubscriberPage> {
     });
   }
 
+  Future<void> _discoverTopics() async {
+    if (_isDiscovering) return;
+    setState(() {
+      _isDiscovering = true;
+      _status = 'Discovering topics...';
+      _discoveredTopics.clear();
+      _discoveredTopics.add('test/**');
+      _topic = 'test/**';
+    });
+
+    ZenohClient? tempClient;
+    ZenohSubscriber? tempSub;
+    try {
+      final locator =
+          '$_protocol/${_ipController.text}:${_portController.text}';
+      final config = ZenohConfig(mode: ZenohMode.client, locator: locator);
+
+      tempClient = await ZenohClient.connect(config);
+      tempSub = await tempClient.subscribe('test/**');
+
+      final sub = tempSub.stream.listen((sample) {
+        final topic = sample.keyExpr;
+        if (!_discoveredTopics.contains(topic)) {
+          setState(() {
+            _discoveredTopics.add(topic);
+          });
+        }
+      });
+
+      // Listen for 2.5 seconds
+      await Future.delayed(const Duration(milliseconds: 2500));
+      await sub.cancel();
+
+      setState(() {
+        _status = 'Discovered ${_discoveredTopics.length - 1} actual topics';
+      });
+    } catch (e) {
+      _addSystemLog('Discovery error: $e', isError: true);
+      setState(() => _status = 'Discovery Error: $e');
+    } finally {
+      if (tempSub != null && tempClient != null) {
+        unawaited(tempClient.undeclareSubscriber(tempSub));
+      }
+      if (tempClient != null) {
+        unawaited(tempClient.close());
+      }
+      setState(() {
+        _isDiscovering = false;
+      });
+    }
+  }
+
   Future<void> _initZenoh() async {
     if (_status == 'Starting subscriber...') return;
 
@@ -113,8 +168,8 @@ class _ZenohSubscriberPageState extends State<ZenohSubscriberPage> {
       final client = await ZenohClient.connect(config);
       _addSystemLog('Successfully connected!');
 
-      final subscriber = await client.subscribe('test/**');
-      _addSystemLog('Subscribed to test/**');
+      final subscriber = await client.subscribe(_topic);
+      _addSystemLog('Subscribed to $_topic');
 
       final subscription = subscriber.stream.listen(
         (sample) {
@@ -411,6 +466,69 @@ class _ZenohSubscriberPageState extends State<ZenohSubscriberPage> {
                             vertical: 10,
                           ),
                         ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: _topic,
+                        decoration: InputDecoration(
+                          labelText: 'Topic to Subscribe',
+                          isDense: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                        ),
+                        items: _discoveredTopics.map((t) {
+                          return DropdownMenuItem(
+                            value: t,
+                            child: Text(t == 'test/**' ? 'test/** (All)' : t),
+                          );
+                        }).toList(),
+                        onChanged:
+                            (isConnected || isConnecting || _isDiscovering)
+                            ? null
+                            : (val) {
+                                if (val != null) {
+                                  setState(() {
+                                    _topic = val;
+                                  });
+                                }
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.deepPurple.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: IconButton(
+                        icon: _isDiscovering
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.search,
+                                color: Colors.deepPurple,
+                              ),
+                        tooltip: 'Discover Topics',
+                        onPressed:
+                            (_isDiscovering || isConnected || isConnecting)
+                            ? null
+                            : _discoverTopics,
                       ),
                     ),
                   ],
