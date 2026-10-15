@@ -30,7 +30,7 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
+build/
 /coverage/
 
 # Symbolication related
@@ -48,7 +48,5 @@ app.*.map.json
 /zenoh_android/
 /zenoh_c_build/
 
-# Ensure zenoh_dart package contents and .so files are tracked
-!/packages/zenoh_dart/
-!/packages/zenoh_dart/**
+# Keep the prebuilt zenoh native libraries in the package tracked
 !/packages/zenoh_dart/**/*.so

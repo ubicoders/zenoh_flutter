@@ -18,20 +18,28 @@ Dart and Flutter FFI bindings for [Eclipse Zenoh](https://zenoh.io), prepared by
    flutter pub add zenoh_dart
    ```
 
-3. Initialize a session and interact with Zenoh resources:
+   In the zenoh_flutter repository the app uses it as a path dependency (`path: packages/zenoh_dart`).
+
+3. Open a session and use Zenoh resources:
 
    ```dart
-   final client = await ZenohClient.connect(ZenohConfig());
+   final client = await ZenohClient.connect(
+     ZenohConfig(
+       mode: ZenohMode.client,
+       connectEndpoints: ['tcp/127.0.0.1:7447'],
+     ),
+   );
 
    final publisher = await client.declarePublisher('demo/example');
    final subscriber = await client.subscribe('demo/example');
 
-    final sub = subscriber.stream.listen((sample) {
-       final message = sample.payloadAsString();
-       debugPrint('🔔 received: ${sample.keyExpr} -> $message');
+   final sub = subscriber.stream.listen((sample) {
+     // sample.encoding is the zenoh encoding string (e.g. 'text/plain'), or null.
+     debugPrint('received ${sample.keyExpr} [${sample.encoding}]: '
+         '${sample.payloadAsString()}');
    });
 
-    await client.publishString(publisher, 'Hello Zenoh!');
+   await client.publishString(publisher, 'Hello Zenoh!');
 
    await sub.cancel();
    await client.undeclareSubscriber(subscriber);
@@ -39,39 +47,77 @@ Dart and Flutter FFI bindings for [Eclipse Zenoh](https://zenoh.io), prepared by
    await client.close();
    ```
 
+## Configuration
+
+`ZenohConfig` is turned into zenoh's JSON configuration and passed to `zc_config_from_str`. `mode` is always written; the other keys are written only when you set them, so anything left unset keeps the zenoh default.
+
+| Field | zenoh key | Example |
+|---|---|---|
+| `mode` (default `ZenohMode.peer`) | `mode` | `ZenohMode.client` |
+| `connectEndpoints` | `connect/endpoints` | `['tcp/10.0.2.2:7447']` |
+| `listenEndpoints` | `listen/endpoints` | `['tcp/0.0.0.0:7447', 'ws/0.0.0.0:8000']` |
+| `multicastScouting` (`bool?`) | `scouting/multicast/enabled` | `false` |
+| `locator` (deprecated) | added as the first connect endpoint | `'tcp/localhost:7447'` |
+
+Duplicate endpoints are dropped. For example:
+
+```dart
+final config = ZenohConfig(
+  mode: ZenohMode.router,
+  listenEndpoints: ['tcp/0.0.0.0:7447', 'udp/0.0.0.0:7447'],
+  multicastScouting: false,
+);
+// config.toJson() ==
+// {'mode': 'router',
+//  'listen': {'endpoints': ['tcp/0.0.0.0:7447', 'udp/0.0.0.0:7447']},
+//  'scouting': {'multicast': {'enabled': false}}}
+```
+
+## Samples and lifecycle
+
+- `ZenohSample` has `keyExpr`, `payload` (`Uint8List`), `encoding` and `payloadAsString()`. `encoding` is the string from zenoh-c `z_encoding_to_string`, such as `text/plain`, `application/json` or `zenoh/bytes`, possibly with a `;schema` suffix. It is null when the encoding cannot be read. `publishString` and `publishBytes` do not set an encoding.
+- Each subscriber has a background isolate that receives samples from a zenoh FIFO channel and feeds `subscriber.stream`.
+- `undeclareSubscriber` and `close` are idempotent. `close` undeclares any remaining subscribers, then closes the session; await it before you drop the client.
+- `undeclarePublisher` frees the publisher, so call it once per publisher.
+- Publishing an empty payload throws `ArgumentError`. Declaring a publisher, subscribing or publishing on a closed client throws `StateError`.
+
 ## Native binaries
 
-The `native/` directory contains per-platform Zenoh distributions. **Native binary archives (`.zip` files) are not included in the package to keep the download size reasonable.**
+### Android and iOS
 
-### Download binaries
+Android and iOS libraries are built from source with the scripts at the root of the zenoh_flutter repository. Each version gets its own folder under `native/`:
 
-Run the helper script to download and extract official Zenoh C binaries:
+- Android, see [docs/BUILD_ANDROID.md](../../docs/BUILD_ANDROID.md): `bash .claude/skills/zenoh-build-android/build_zenoh_android.sh <version>` (or the manual `cargo ndk` steps) writes `native/android/<version>/<abi>/libzenohc.so`. `bash .claude/skills/zenoh-activate-libs/copy_zenoh_libs.sh <version>` copies it into the app as `android/app/src/main/jniLibs/<abi>/libzenoh.so`, the name the loader opens.
+- iOS, see [docs/BUILD_IOS.md](../../docs/BUILD_IOS.md): `bash .claude/skills/zenoh-build-ios/build_zenoh_ios.sh <version>` (macOS with Xcode) writes `native/ios/<version>/zenohc.xcframework`. `bash .claude/skills/zenoh-activate-libs/copy_zenoh_libs.sh <version> ios` copies it to `ios/Frameworks/zenohc.xcframework`, which `ios/zenoh_dart.podspec` vendors into the app.
+
+### Desktop
+
+Run the fetch script from this package's directory:
 
 ```bash
 dart run tool/fetch_zenoh_binaries.dart
 ```
 
-This script downloads platform-specific archives from the [Zenoh C releases](https://github.com/eclipse-zenoh/zenoh-c/releases) and verifies SHA-256 checksums. Extract the downloaded archives to keep the shared library (`.dll`, `.so`, `.dylib`) in the correct `native/<platform>/<arch>/` directory.
+It downloads the zenoh-c 1.6.2 standalone archives listed in `tool/zenoh_binaries.json` from the [Zenoh C releases](https://github.com/eclipse-zenoh/zenoh-c/releases) and verifies their SHA-256 checksums. It does not extract them, and it skips the Android and iOS entries, which have no URL. Extract each archive and copy the library to the file the loader looks for: `native/linux/<arch>/libzenoh.so`, `native/macos/<arch>/libzenoh.dylib` or `native/windows/x64/zenoh.dll` (on Windows the loader also looks in the `msvc/` and `gnu/` subfolders). See [native/README.md](native/README.md).
 
-### Platform support
+### Platform status
 
-- ✅ **Windows** (x64 MSVC)
-- ✅ **macOS** (x64, arm64)
-- ✅ **Linux** (x64, arm64, armv7)
-- ⚠️ **Android/iOS**: Native binaries are not yet officially published. See `doc/platform_support.md` and build scripts in `tool/` for instructions on building from source.
-- 🚧 **Web**: Experimental support with platform-agnostic architecture. Full implementation pending zenoh-ts integration. See `doc/platform_support.md` for details.
-
-**Note**: Windows GNU toolchain binaries are not included in the package to reduce size. Use the MSVC binaries (default on Windows) or download the GNU version via `dart run tool/fetch_zenoh_binaries.dart` if needed.
+- **Android**: zenoh-c 1.6.2 and 1.8.0 for `arm64-v8a`, `armeabi-v7a` and `x86_64` in `native/android/`. The build script and the manual steps also build `x86`.
+- **iOS**: device (`arm64`) and simulator (`arm64`, `x86_64`) slices in one XCFramework, built on macOS. No iOS build is checked in yet.
+- **macOS** (`x86_64`, `aarch64`), **Linux** (`x86_64`, `aarch64`, `armv7`) and **Windows** (`x64`, MSVC and GNU): zenoh-c 1.6.2 standalone archives.
+- **Web**: stub only. `ZenohClientWeb` throws `UnimplementedError` until zenoh-ts is integrated. See `doc/web_platform_support.md`.
 
 ## Generating bindings
 
-Place the Zenoh C headers under `native/include/` (the project ships with a minimal `zenoh.h` stub for bootstrapping). Once the official headers are available, regenerate the Dart FFI layer with:
+`ffigen.yaml` reads `native/include/zenoh.h`. That file only includes `../windows/x64/msvc/include/zenoh.h`, the zenoh-c 1.6.2 headers from the Windows MSVC archive. Regenerate the bindings with:
 
 ```bash
 dart run ffigen
 ```
 
-The command writes expanded bindings into `lib/src/bindings/zenoh_generated.dart`, which you can then wrap with higher-level Dart helpers.
+The command writes `lib/src/bindings/zenoh_generated.dart`. `ffigen.yaml` sets `llvm-path` to a Windows LLVM under `build/llvm/`, so change it to match your machine.
+
+The bindings in the repository come from the 1.6.2 headers, but the app ships zenoh-c 1.8.0 on Android. `doc/platform_support.md` explains the workaround and how to regenerate.
 
 ## Platform support
 

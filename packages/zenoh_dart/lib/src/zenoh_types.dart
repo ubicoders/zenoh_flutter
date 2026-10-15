@@ -5,20 +5,56 @@ import 'dart:typed_data';
 
 import 'bindings/zenoh_generated.dart' as gen;
 
-/// Defines core data types for the Zenoh Dart bindings.
+/// Session configuration passed to zenoh-c via `zc_config_from_str`.
+///
+/// [toJson] only emits the keys that were explicitly set, so anything left
+/// unset keeps the zenoh default.
 class ZenohConfig {
-  ZenohConfig({this.mode = ZenohMode.peer, this.locator});
+  ZenohConfig({
+    this.mode = ZenohMode.peer,
+    @Deprecated('Use connectEndpoints') this.locator,
+    List<String> connectEndpoints = const [],
+    this.listenEndpoints = const [],
+    this.multicastScouting,
+  }) : connectEndpoints = <String>{
+          if (locator != null) locator,
+          ...connectEndpoints,
+        }.toList();
 
   final ZenohMode mode;
   final String? locator;
+
+  /// Endpoints to connect to, e.g. 'tcp/10.0.2.2:7447'.
+  ///
+  /// Includes [locator] (first) when it was provided. Duplicates are removed,
+  /// preserving the order of first occurrence.
+  final List<String> connectEndpoints;
+
+  /// Endpoints to listen on, e.g. 'tcp/0.0.0.0:7447', 'udp/0.0.0.0:7447',
+  /// 'ws/0.0.0.0:8000'.
+  final List<String> listenEndpoints;
+
+  /// Enables or disables multicast scouting. null = leave zenoh default.
+  final bool? multicastScouting;
 
   Map<String, Object?> toJson() {
     final json = <String, Object?>{
       'mode': mode.name,
     };
-    if (locator != null) {
+    if (connectEndpoints.isNotEmpty) {
       json['connect'] = <String, Object?>{
-        'endpoints': [locator],
+        'endpoints': connectEndpoints.toSet().toList(),
+      };
+    }
+    if (listenEndpoints.isNotEmpty) {
+      json['listen'] = <String, Object?>{
+        'endpoints': listenEndpoints.toSet().toList(),
+      };
+    }
+    final scouting = multicastScouting;
+    if (scouting != null) {
+      json['scouting'] = <String, Object?>{
+        'multicast': <String, Object?>{'enabled': scouting},
       };
     }
     return json;
@@ -42,10 +78,19 @@ class ZenohSession {
 
 /// Represents a sample delivered to subscribers.
 class ZenohSample {
-  const ZenohSample({required this.keyExpr, required this.payload});
+  const ZenohSample({
+    required this.keyExpr,
+    required this.payload,
+    this.encoding,
+  });
 
   final String keyExpr;
   final Uint8List payload;
+
+  /// The zenoh encoding of [payload] as produced by `z_encoding_to_string`,
+  /// e.g. `text/plain`, `application/json` or `zenoh/bytes`, possibly with a
+  /// `;schema` suffix. null when unknown or unavailable.
+  final String? encoding;
 
   String payloadAsString({Encoding encoding = utf8}) =>
       encoding.decode(payload);

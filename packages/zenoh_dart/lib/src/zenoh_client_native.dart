@@ -52,7 +52,10 @@ Future<void> _zenohFifoPollingIsolate(Map<String, Object> config) async {
 
     if (rc != 0) {
       pkgffi.calloc.free(samplePtr);
-      sendPort.send(null); // channel disconnected — signal stream end
+      // Channel disconnected — signal stream end. This must be the isolate's
+      // last use of handlerPtr: the main isolate frees the handler as soon as
+      // it receives this null.
+      sendPort.send(null);
       break;
     }
 
@@ -90,11 +93,89 @@ Future<void> _zenohFifoPollingIsolate(Map<String, Object> config) async {
     native.z_slice_drop(ownedSlicePtr.cast<gen.z_moved_slice_t>());
     pkgffi.calloc.free(ownedSlicePtr);
 
+    // Read encoding (e.g. 'text/plain'). The encoding loan is tied to the
+    // sample, so this must happen before z_sample_drop. Best effort: any
+    // failure yields null rather than killing the polling isolate.
+    String? encodingStr;
+    final ownedEncStrPtr = pkgffi.calloc<gen.z_owned_string_t>();
+    var encStrInitialized = false;
+    try {
+      final encodingLoan = native.z_sample_encoding(loanedSample);
+      if (encodingLoan != ffi.nullptr) {
+        native.z_encoding_to_string(encodingLoan, ownedEncStrPtr);
+        encStrInitialized = true;
+        final encStrLoan = native.z_string_loan(ownedEncStrPtr);
+        final encLen = native.z_string_len(encStrLoan);
+        if (encLen > 0) {
+          final encData = native.z_string_data(encStrLoan).cast<ffi.Uint8>();
+          encodingStr =
+              utf8.decode(encData.asTypedList(encLen), allowMalformed: true);
+        }
+      }
+    } catch (_) {
+      encodingStr = null;
+    } finally {
+      if (encStrInitialized) {
+        native.z_string_drop(ownedEncStrPtr.cast<gen.z_moved_string_t>());
+      }
+      pkgffi.calloc.free(ownedEncStrPtr);
+    }
+
     // Drop the owned sample.
     native.z_sample_drop(samplePtr.cast<gen.z_moved_sample_t>());
     pkgffi.calloc.free(samplePtr);
 
-    sendPort.send(<String, Object>{'key': keyStr, 'payload': payload});
+    sendPort.send(<String, Object?>{
+      'key': keyStr,
+      'payload': payload,
+      'encoding': encodingStr,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Opaque struct allocation.
+// ---------------------------------------------------------------------------
+
+/// Extra bytes added when allocating opaque zenoh-c structs whose size differs
+/// between zenoh-c releases.
+///
+/// The generated bindings come from the zenoh-c 1.6.2 headers, but the 1.8.0
+/// library bundled for Android has larger `z_owned_subscriber_t` (56 vs 48
+/// bytes), `z_owned_publisher_t` (120 vs 112) and `z_owned_config_t`
+/// (2008 vs 1984) on 64-bit targets. Allocating too little lets zenoh-c write
+/// past the end of the chunk and corrupt the heap; allocating more is harmless.
+const int _opaqueSlackBytes = 256;
+
+ffi.Pointer<T> _callocOpaque<T extends ffi.NativeType>(int generatedSize) =>
+    pkgffi.calloc<ffi.Uint8>(generatedSize + _opaqueSlackBytes).cast<T>();
+
+/// How long teardown waits for a polling isolate to confirm it has left
+/// `z_fifo_handler_sample_recv` before giving up and leaking the handler.
+const Duration _pollingIsolateExitTimeout = Duration(seconds: 2);
+
+/// Native resources and isolate plumbing behind one subscription.
+class _NativeSubscription {
+  _NativeSubscription({
+    required this.subscriberPtr,
+    required this.handlerPtr,
+    required this.receivePort,
+    required this.controller,
+  });
+
+  final ffi.Pointer<gen.z_owned_subscriber_t> subscriberPtr;
+  final ffi.Pointer<gen.z_owned_fifo_handler_sample_t> handlerPtr;
+  final ReceivePort receivePort;
+  final StreamController<ZenohSample> controller;
+
+  /// Completes once the polling isolate no longer touches [handlerPtr]: it
+  /// sent its final `null` (channel disconnected) or it terminated.
+  final Completer<void> isolateDone = Completer<void>();
+
+  Isolate? isolate;
+
+  void markIsolateDone() {
+    if (!isolateDone.isCompleted) isolateDone.complete();
   }
 }
 
@@ -107,15 +188,13 @@ class ZenohClientNative implements ZenohClientInterface {
   final ZenohBindings _bindings;
   final ZenohSession session;
 
+  /// Set as soon as [close] is called; the client is unusable from then on.
   bool _closed = false;
+  Future<void>? _closeFuture;
   int _nextId = 1;
 
-  final Map<int, ffi.Pointer<gen.z_owned_subscriber_t>> _subscriberPtrs = {};
-  final Map<int, ffi.Pointer<gen.z_owned_fifo_handler_sample_t>> _fifoHandlers =
-      {};
-  final Map<int, ReceivePort> _pollingPorts = {};
-  final Map<int, Isolate> _pollingIsolates = {};
-  final Map<int, StreamController<ZenohSample>> _controllers = {};
+  final Map<int, _NativeSubscription> _subscriptions = {};
+  final Set<Future<void>> _pendingTeardowns = {};
 
   @override
   bool get isClosed => _closed;
@@ -134,7 +213,11 @@ class ZenohClientNative implements ZenohClientInterface {
 
   @override
   Future<ZenohPublisher> declarePublisher(String keyExpr) async {
-    final publisherPtr = pkgffi.calloc<gen.z_owned_publisher_t>();
+    if (_closed) {
+      throw StateError('Cannot declare a publisher on a closed ZenohClient.');
+    }
+    final publisherPtr = _callocOpaque<gen.z_owned_publisher_t>(
+        ffi.sizeOf<gen.z_owned_publisher_t>());
     try {
       final keyExprPtr = pkgffi.calloc<gen.z_owned_keyexpr_t>();
       final keyExprUtf8 = keyExpr.toNativeUtf8(allocator: pkgffi.calloc);
@@ -181,10 +264,12 @@ class ZenohClientNative implements ZenohClientInterface {
     final handlerPtr = pkgffi.calloc<gen.z_owned_fifo_handler_sample_t>();
     _bindings.zFifoChannelSampleNew(callbackPtr, handlerPtr, 64);
 
-    final subscriberPtr = pkgffi.calloc<gen.z_owned_subscriber_t>();
+    final subscriberPtr = _callocOpaque<gen.z_owned_subscriber_t>(
+        ffi.sizeOf<gen.z_owned_subscriber_t>());
     final keyExprPtr = pkgffi.calloc<gen.z_owned_keyexpr_t>();
     final keyExprUtf8 = keyExpr.toNativeUtf8(allocator: pkgffi.calloc);
     final optionsPtr = pkgffi.calloc<gen.z_subscriber_options_t>();
+    var callbackMoved = false;
 
     try {
       final keyRc =
@@ -194,6 +279,7 @@ class ZenohClientNative implements ZenohClientInterface {
             errorCode: keyRc);
       }
       _bindings.zSubscriberOptionsDefault(optionsPtr);
+      callbackMoved = true;
       final rc = _bindings.zDeclareSubscriber(
         _bindings.zSessionLoan(session.pointer),
         subscriberPtr,
@@ -206,54 +292,84 @@ class ZenohClientNative implements ZenohClientInterface {
         throw ZenohNativeCallException('z_declare_subscriber failed',
             errorCode: rc);
       }
-    } catch (e) {
-      pkgffi.calloc.free(callbackPtr);
+    } catch (_) {
+      // No isolate polls the handler yet, so it can be released directly.
+      if (!callbackMoved) {
+        _bindings.zClosureSampleDrop(
+            callbackPtr.cast<gen.z_moved_closure_sample_t>());
+      }
+      _bindings.zFifoHandlerSampleDrop(
+          handlerPtr.cast<gen.z_moved_fifo_handler_sample_t>());
       pkgffi.calloc.free(handlerPtr);
       pkgffi.calloc.free(subscriberPtr);
-      pkgffi.calloc.free(keyExprPtr);
-      pkgffi.calloc.free(keyExprUtf8);
-      pkgffi.calloc.free(optionsPtr);
       rethrow;
     } finally {
       pkgffi.calloc.free(keyExprUtf8);
       pkgffi.calloc.free(optionsPtr);
       pkgffi.calloc.free(keyExprPtr);
-      // callbackPtr ownership was moved into the subscriber declaration.
+      // callbackPtr ownership was moved into the subscriber declaration (or
+      // dropped above); only the Dart-side struct memory remains.
       pkgffi.calloc.free(callbackPtr);
     }
 
     final handlerAddress = _bindings.zFifoHandlerSampleLoan(handlerPtr).address;
 
-    final controller = StreamController<ZenohSample>();
-    final receivePort = ReceivePort();
-    final isolate = await Isolate.spawn<Map<String, Object>>(
-      _zenohFifoPollingIsolate,
-      <String, Object>{
-        'sendPort': receivePort.sendPort,
-        'handlerAddress': handlerAddress,
-      },
+    final sub = _NativeSubscription(
+      subscriberPtr: subscriberPtr,
+      handlerPtr: handlerPtr,
+      receivePort: ReceivePort(),
+      controller: StreamController<ZenohSample>(),
     );
 
-    receivePort.listen((message) {
+    sub.receivePort.listen((message) {
       if (message == null) {
-        controller.close();
-        receivePort.close();
-      } else if (message is Map) {
+        // Either the isolate's final message (channel disconnected, it is about
+        // to return) or its onExit notification. In both cases it will not
+        // touch the handler again.
+        sub.markIsolateDone();
+        sub.receivePort.close();
+        if (!sub.controller.isClosed) sub.controller.close();
+      } else if (message is Map && !sub.controller.isClosed) {
         final key = message['key'] as String? ?? '';
         final data = message['payload'] as Uint8List? ?? Uint8List(0);
-        controller.add(ZenohSample(keyExpr: key, payload: data));
+        sub.controller.add(ZenohSample(
+          keyExpr: key,
+          payload: data,
+          encoding: message['encoding'] as String?,
+        ));
       }
     });
 
+    // Register before awaiting so a concurrent close() tears it down too.
     final id = _nextId++;
-    _subscriberPtrs[id] = subscriberPtr;
-    _fifoHandlers[id] = handlerPtr;
-    _pollingPorts[id] = receivePort;
-    _pollingIsolates[id] = isolate;
-    _controllers[id] = controller;
+    _subscriptions[id] = sub;
+
+    try {
+      sub.isolate = await Isolate.spawn<Map<String, Object>>(
+        _zenohFifoPollingIsolate,
+        <String, Object>{
+          'sendPort': sub.receivePort.sendPort,
+          'handlerAddress': handlerAddress,
+        },
+        onExit: sub.receivePort.sendPort,
+      );
+    } catch (_) {
+      // No isolate was started, so nothing can be blocked on the handler.
+      sub.markIsolateDone();
+      if (identical(_subscriptions[id], sub)) {
+        _subscriptions.remove(id);
+        await _trackTeardown(sub);
+      }
+      rethrow;
+    }
+
+    if (!identical(_subscriptions[id], sub)) {
+      // close() ran while the isolate was starting and already tore this down.
+      throw StateError('ZenohClient was closed while subscribing.');
+    }
 
     return ZenohSubscriber(subscriberPtr,
-        stream: controller.stream, contextId: id);
+        stream: sub.controller.stream, contextId: id);
   }
 
   @override
@@ -268,6 +384,9 @@ class ZenohClientNative implements ZenohClientInterface {
   }
 
   Future<void> _publish(ZenohPublisher publisher, List<int> payload) async {
+    if (_closed) {
+      throw StateError('Cannot publish using a closed ZenohClient.');
+    }
     if (payload.isEmpty) {
       throw ArgumentError.value(payload, 'payload', 'must not be empty');
     }
@@ -307,57 +426,100 @@ class ZenohClientNative implements ZenohClientInterface {
     pkgffi.calloc.free(ptr);
   }
 
+  /// Undeclares [subscriber] and releases its resources.
+  ///
+  /// Idempotent: a second call, or a call after [close], is a no-op.
   @override
   Future<void> undeclareSubscriber(ZenohSubscriber subscriber) async {
-    _cleanupSubscriberById(subscriber.contextId);
-    final ptr = subscriber.pointer;
-    if (ptr != null) {
-      _bindings.zSubscriberDrop(ptr.cast<gen.z_moved_subscriber_t>());
-      pkgffi.calloc.free(ptr);
-    }
+    final id = subscriber.contextId;
+    final sub = _subscriptions[id];
+    if (sub == null || sub.subscriberPtr != subscriber.pointer) return;
+    // Remove before awaiting so a concurrent close() cannot tear it down twice.
+    _subscriptions.remove(id);
+    await _trackTeardown(sub);
   }
 
-  void _cleanupSubscriberById(int id) {
-    // Dropping the handler disconnects the FIFO channel, causing
-    // z_fifo_handler_sample_recv to return Z_CHANNEL_DISCONNECTED.
-    // The background isolate then exits naturally.
-    final handler = _fifoHandlers.remove(id);
-    if (handler != null) {
+  Future<void> _trackTeardown(_NativeSubscription sub) {
+    final future = _teardownSubscription(sub);
+    _pendingTeardowns.add(future);
+    return future.whenComplete(() => _pendingTeardowns.remove(future));
+  }
+
+  /// Teardown order matters: the polling isolate may be blocked inside
+  /// `z_fifo_handler_sample_recv` on a loan of the handler, so the handler
+  /// must outlive that call.
+  Future<void> _teardownSubscription(_NativeSubscription sub) async {
+    // 1. Undeclare the subscriber. This drops its callback closure and with it
+    //    the FIFO sender, so recv returns Z_CHANNEL_DISCONNECTED once the
+    //    queue is drained and the isolate sends null and returns. The owned
+    //    subscriber is in its gravestone state afterwards, so its memory can
+    //    be freed right away.
+    _bindings
+        .zSubscriberDrop(sub.subscriberPtr.cast<gen.z_moved_subscriber_t>());
+    pkgffi.calloc.free(sub.subscriberPtr);
+
+    // 2. Wait until the isolate has confirmed it left recv.
+    var isolateDone = true;
+    try {
+      await sub.isolateDone.future.timeout(_pollingIsolateExitTimeout);
+    } on TimeoutException {
+      isolateDone = false;
+    }
+
+    // 3. Only now release the handler.
+    if (isolateDone) {
+      sub.isolate?.kill(priority: Isolate.immediate); // Already exited; no-op.
       _bindings.zFifoHandlerSampleDrop(
-          handler.cast<gen.z_moved_fifo_handler_sample_t>());
-      pkgffi.calloc.free(handler);
+          sub.handlerPtr.cast<gen.z_moved_fifo_handler_sample_t>());
+      pkgffi.calloc.free(sub.handlerPtr);
+    } else {
+      // Leaking the handler is better than freeing memory another thread may
+      // still be blocked on.
+      print('[zenoh_dart] Subscriber polling isolate did not exit within '
+          '${_pollingIsolateExitTimeout.inMilliseconds} ms; leaking its FIFO '
+          'handler to avoid a use-after-free.');
     }
-    _pollingIsolates.remove(id)?.kill(priority: Isolate.immediate);
-    _pollingPorts.remove(id)?.close();
-    _controllers.remove(id)?.close();
-    _subscriberPtrs.remove(id);
+
+    sub.receivePort.close();
+    if (!sub.controller.isClosed) unawaited(sub.controller.close());
   }
 
+  /// Undeclares all subscribers and closes the session.
+  ///
+  /// Idempotent: later calls return the same future.
   @override
-  Future<void> close() async {
-    if (_closed) return;
-    for (final id in List<int>.from(_subscriberPtrs.keys)) {
-      final ptr = _subscriberPtrs[id];
-      _cleanupSubscriberById(id);
-      if (ptr != null) {
-        _bindings.zSubscriberDrop(ptr.cast<gen.z_moved_subscriber_t>());
-        pkgffi.calloc.free(ptr);
-      }
-    }
+  Future<void> close() {
+    final existing = _closeFuture;
+    if (existing != null) return existing;
+    _closed = true;
+    return _closeFuture = _closeSession();
+  }
+
+  Future<void> _closeSession() async {
+    final subs = _subscriptions.values.toList();
+    _subscriptions.clear();
+    // Undeclares every subscriber synchronously first, then waits for all
+    // polling isolates (including teardowns already started by
+    // undeclareSubscriber) in parallel.
+    await Future.wait(<Future<void>>[
+      ..._pendingTeardowns,
+      for (final sub in subs) _trackTeardown(sub),
+    ]);
+
     final optionsPtr = pkgffi.calloc<gen.z_close_options_t>();
+    final int rc;
     try {
       _bindings.zCloseOptionsDefault(optionsPtr);
-      final rc =
+      rc =
           _bindings.zClose(_bindings.zSessionLoan(session.pointer), optionsPtr);
-      if (rc != 0) {
-        throw ZenohNativeCallException('z_close failed', errorCode: rc);
-      }
     } finally {
       pkgffi.calloc.free(optionsPtr);
     }
     _bindings.zSessionDrop(session.pointer.cast<gen.z_moved_session_t>());
     pkgffi.calloc.free(session.pointer);
-    _closed = true;
+    if (rc != 0) {
+      throw ZenohNativeCallException('z_close failed', errorCode: rc);
+    }
   }
 
   static void _openSession(
@@ -367,11 +529,13 @@ class ZenohClientNative implements ZenohClientInterface {
   ) {
     final configJson = jsonEncode(config.toJson());
     final configUtf8 = configJson.toNativeUtf8(allocator: pkgffi.calloc);
-    final configPtr = pkgffi.calloc<gen.z_owned_config_t>();
+    final configPtr =
+        _callocOpaque<gen.z_owned_config_t>(ffi.sizeOf<gen.z_owned_config_t>());
     try {
       final rc =
           bindings.zcConfigFromStr(configPtr, configUtf8.cast<ffi.Char>());
       if (rc != 0) {
+        pkgffi.calloc.free(configPtr);
         throw ZenohNativeCallException('zc_config_from_str failed',
             errorCode: rc);
       }

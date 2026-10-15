@@ -12,7 +12,11 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
+  shared_preferences: ^2.3.0
   web_socket_channel: ^3.0.1
+  protobuf: ^6.1.0
+  fixnum: ^1.1.1
+  flat_buffers: ^25.9.23
   zenoh_dart:
     path: packages/zenoh_dart
 

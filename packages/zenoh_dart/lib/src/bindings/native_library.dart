@@ -25,7 +25,7 @@ class NativeLibrary {
   }
 
   /// Name of the dynamic framework embedded in the app on iOS
-  /// (see `ios/zenoh_dart.podspec` and `build_zenoh_ios.sh`).
+  /// (see `ios/zenoh_dart.podspec` and `.claude/skills/zenoh-build-ios/build_zenoh_ios.sh`).
   static const String _iosFrameworkName = 'zenohc';
 
   Future<DynamicLibrary> _loadDynamicLibrary() async {

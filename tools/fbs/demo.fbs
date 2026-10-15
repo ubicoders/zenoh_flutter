@@ -1,0 +1,33 @@
+// demo.fbs — FlatBuffers twin of tools/proto/demo.proto for the test/temperature
+// topic, published by tools/test_publisher.py and decoded by the Flutter
+// viewer (lib/fbs/, generated).
+//
+// Regenerate both language bindings with:  bash tools/gen_messages.sh
+//
+// Publishers set the zenoh encoding to `application/flatbuffers;zenoh_demo.<Table>`;
+// the schema suffix is how the viewer picks the decoder, since FlatBuffers
+// bytes are not self-describing.
+namespace zenoh_demo;
+
+// Metadata carried by every table. Nanoseconds since the UNIX epoch.
+struct Header {
+  timestamp_ns: uint64;
+  // Monotonically increasing per-publisher sequence number.
+  seq: uint64;
+}
+
+struct Vector3 {
+  x: double;
+  y: double;
+  z: double;
+}
+
+// Inertial measurement unit sample, same fields as the protobuf Imu.
+table Imu {
+  header: Header;
+  accel: Vector3;   // m/s^2
+  gyro: Vector3;    // rad/s
+  temp: double;     // degrees C
+}
+
+root_type Imu;

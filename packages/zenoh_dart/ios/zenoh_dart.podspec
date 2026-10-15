@@ -2,12 +2,12 @@
 # CocoaPods spec for the zenoh_dart FFI plugin on iOS.
 #
 # The Zenoh C library is shipped as a prebuilt dynamic XCFramework. Build it with
-# ./build_zenoh_ios.sh <version> at the repository root and activate a version with
-# ./copy_zenoh_libs.sh <version> ios, which copies it to ios/Frameworks/zenohc.xcframework.
+# bash .claude/skills/zenoh-build-ios/build_zenoh_ios.sh <version> from the repository root and activate a version with
+# bash .claude/skills/zenoh-activate-libs/copy_zenoh_libs.sh <version> ios, which copies it to ios/Frameworks/zenohc.xcframework.
 #
 Pod::Spec.new do |s|
   s.name             = 'zenoh_dart'
-  s.version          = '0.2.0'
+  s.version          = '0.2.1'
   s.summary          = 'Dart and Flutter FFI bindings for the Eclipse Zenoh middleware.'
   s.description      = <<-DESC
 Dart and Flutter FFI bindings for Eclipse Zenoh. Bundles a prebuilt zenoh-c dynamic framework.

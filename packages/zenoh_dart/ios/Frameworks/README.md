@@ -5,7 +5,7 @@ This folder holds the `zenohc.xcframework` that the podspec in the parent direct
 Do not edit it by hand. From the repository root run:
 
 ```bash
-./copy_zenoh_libs.sh <version> ios
+bash .claude/skills/zenoh-activate-libs/copy_zenoh_libs.sh <version> ios
 ```
 
-which copies `packages/zenoh_dart/native/ios/<version>/zenohc.xcframework` here. See `docs/BUILD_IOS.md` for how to produce a version.
+which copies `packages/zenoh_dart/native/ios/<version>/zenohc.xcframework` here. See [docs/BUILD_IOS.md](../../../../docs/BUILD_IOS.md) for how to produce a version.
