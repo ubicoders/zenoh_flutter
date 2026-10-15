@@ -1,4 +1,4 @@
-package com.example.android_lidar_view
+package com.example.zenoh_flutter
 
 import io.flutter.embedding.android.FlutterActivity
 

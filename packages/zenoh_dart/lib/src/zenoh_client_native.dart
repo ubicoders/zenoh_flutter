@@ -26,7 +26,10 @@ Future<void> _zenohFifoPollingIsolate(Map<String, Object> config) async {
   try {
     if (Platform.isAndroid || Platform.isLinux) {
       lib = ffi.DynamicLibrary.open('libzenoh.so');
-    } else if (Platform.isMacOS || Platform.isIOS) {
+    } else if (Platform.isIOS) {
+      // Embedded dynamic framework, see ios/zenoh_dart.podspec.
+      lib = ffi.DynamicLibrary.open('zenohc.framework/zenohc');
+    } else if (Platform.isMacOS) {
       lib = ffi.DynamicLibrary.open('libzenoh.dylib');
     } else if (Platform.isWindows) {
       lib = ffi.DynamicLibrary.open('zenoh.dll');

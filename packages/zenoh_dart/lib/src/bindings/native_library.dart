@@ -24,7 +24,24 @@ class NativeLibrary {
     return bindings;
   }
 
+  /// Name of the dynamic framework embedded in the app on iOS
+  /// (see `ios/zenoh_dart.podspec` and `build_zenoh_ios.sh`).
+  static const String _iosFrameworkName = 'zenohc';
+
   Future<DynamicLibrary> _loadDynamicLibrary() async {
+    if (Platform.isIOS) {
+      // zenohc.framework is linked into the app by the zenoh_dart pod and is
+      // already loaded by dyld when the app starts. Opening it by framework
+      // path resolves against the loaded image; fall back to the process-wide
+      // symbol table if that lookup fails.
+      try {
+        return DynamicLibrary.open(
+            '$_iosFrameworkName.framework/$_iosFrameworkName');
+      } catch (_) {
+        return DynamicLibrary.process();
+      }
+    }
+
     final name = _libraryFileName();
     final bundledPath = await _resolveBundledLibraryPath(name);
     if (bundledPath != null) {

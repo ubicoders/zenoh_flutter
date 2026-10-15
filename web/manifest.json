@@ -1,6 +1,6 @@
 {
-    "name": "android_lidar_view",
-    "short_name": "android_lidar_view",
+    "name": "zenoh_flutter",
+    "short_name": "zenoh_flutter",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -10,7 +10,7 @@ This document outlines how the `zenoh_dart` package prepares native binaries for
   1. Fetch Zenoh source (tag v1.6.2 or newer).
   2. Use the NDK toolchain file in conjunction with CMake to produce `.so` libraries.
   3. Copy outputs into `native/android/<abi>/` for bundling.
-- **Automation**: `tool/build_android_zenoh.sh` (see below) compiles all ABIs in one run when executed on Linux/macOS with the NDK installed.
+- **Automation**: see `docs/BUILD_ANDROID.md` at the repository root (`cargo ndk` build, then `./copy_zenoh_libs.sh <version>`).
 
 ## iOS
 
@@ -20,7 +20,7 @@ This document outlines how the `zenoh_dart` package prepares native binaries for
   1. Build static libraries for `iphoneos` and `iphonesimulator`.
   2. Wrap them into `zenoh.xcframework`.
   3. Place the resulting bundle under `native/ios/Frameworks/`.
-- **Automation**: `tool/build_ios_zenoh.sh` orchestrates the two-stage build when run on macOS with Xcode.
+- **Automation**: `./build_zenoh_ios.sh <version>` at the repository root, see `docs/BUILD_IOS.md` (macOS with Xcode).
 
 ## macOS
 
