@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:zenoh_flutter/pages/sbio_page.dart';
+import 'package:zenoh_flutter/pages/cube_scene_page.dart';
 import 'package:zenoh_flutter/pages/settings_page.dart';
 import 'package:zenoh_flutter/pages/topics_page.dart';
 import 'package:zenoh_flutter/pages/viewer_page.dart';
+import 'package:zenoh_flutter/swarmbotix_io/subscribers/cube_poses.dart';
 import 'package:zenoh_flutter/session/session_controller.dart';
 import 'package:zenoh_flutter/session/session_settings.dart';
 
@@ -42,6 +44,13 @@ class ZenohApp extends StatelessWidget {
           return MaterialPageRoute<void>(
             settings: settings,
             builder: (_) => ViewerPage(keyExpr: keyExpr),
+          );
+        }
+        if (settings.name == '/cubes') {
+          final keyExpr = settings.arguments as String? ?? CubePosesTopic;
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (_) => CubeScenePage(keyExpr: keyExpr),
           );
         }
         return null;

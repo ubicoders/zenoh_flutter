@@ -28,6 +28,9 @@ class ViewerPage extends StatefulWidget {
   State<ViewerPage> createState() => _ViewerPageState();
 }
 
+/// The vault message the 3D cube scene ([CubeScenePage]) can show.
+const String cubePosesSchema = 'ros2/custom/CubePoses';
+
 class _ViewerPageState extends State<ViewerPage> {
   static const _drawInterval = Duration(milliseconds: 33);
   static const _idleRefresh = Duration(milliseconds: 500);
@@ -376,6 +379,8 @@ class _ViewerPageState extends State<ViewerPage> {
     final shownAt = _shownAt;
     final type = _type;
     final decodedHere = shown != null && _decodesHere(shown);
+    final isCubePoses =
+        shown != null && messageSchemaOf(shown.encoding) == cubePosesSchema;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -385,6 +390,18 @@ class _ViewerPageState extends State<ViewerPage> {
           lastSize: shown?.payload.length,
         ),
         const SizedBox(height: 12),
+        if (isCubePoses) ...[
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pushNamed(
+              context,
+              '/cubes',
+              arguments: widget.keyExpr,
+            ),
+            icon: const Icon(Icons.view_in_ar_outlined),
+            label: const Text('See in 3D'),
+          ),
+          const SizedBox(height: 12),
+        ],
         if (shown == null || type == null)
           _WaitingCard(keyExpr: widget.keyExpr)
         else

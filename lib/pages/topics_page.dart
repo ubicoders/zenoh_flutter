@@ -58,14 +58,6 @@ class _TopicsPageState extends State<TopicsPage> {
       appBar: AppBar(
         title: const Text('Topics'),
         bottom: const ConnectionStrip(),
-        actions: [
-          IconButton(
-            key: const Key('topics.sbio'),
-            tooltip: 'swarmbotix io',
-            icon: const Icon(Icons.hub_outlined),
-            onPressed: () => Navigator.pushNamed(context, '/sbio'),
-          ),
-        ],
       ),
       body: ListenableBuilder(
         listenable: Listenable.merge([_session, _registry]),
