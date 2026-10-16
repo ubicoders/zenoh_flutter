@@ -72,7 +72,10 @@ String payloadTypeLabel(PayloadType t) => switch (t) {
 
 /// The message type named by an `application/protobuf` or
 /// `application/flatbuffers` [encoding]:
-/// `"application/flatbuffers;zenoh_demo.Imu"` -> `"zenoh_demo.Imu"`.
+/// `"application/flatbuffers;ros2/sensor_msgs/Temperature"` ->
+/// `"ros2/sensor_msgs/Temperature"`. The schema is everything after the
+/// first `;`, so an sb vault name (`<style>/<ns>/<Leaf>`, with `/`) and a
+/// bare `sensor_msgs.Temperature` both come through whole.
 ///
 /// Null for any other encoding, or when the schema suffix is missing or
 /// blank.
@@ -87,7 +90,7 @@ String? messageSchemaOf(String? encoding) {
 }
 
 /// [messageSchemaOf] for `application/protobuf` only:
-/// `"application/protobuf;zenoh_demo.Imu"` -> `"zenoh_demo.Imu"`.
+/// `"application/protobuf;ros2/sensor_msgs/Imu"` -> `"ros2/sensor_msgs/Imu"`.
 String? protobufSchemaOf(String? encoding) =>
     _mimeOf(encoding) == _protobufMime ? messageSchemaOf(encoding) : null;
 

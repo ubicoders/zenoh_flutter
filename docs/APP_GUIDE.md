@@ -1,6 +1,6 @@
 # App guide
 
-The app has three screens. **Session** is where it starts. When a session opens, the app moves on to **Topics**. Tap a topic there to open it in the **Viewer**.
+The app has four screens. **Session** is where it starts. When a session opens, the app moves on to **Topics**. Tap a topic there to open it in the **Viewer**. The hub icon in the Topics bar opens **swarmbotix io**, eleven topics (nine of the sb test publisher, two of the ws-ips image relay) through the subscribers `sb io` generated for this app.
 
 The app does not connect by itself when it starts. It loads the last saved settings, always shows the **peer** tab first (peer mode opens even when no router is found), and waits for you to press the button. Switching to **client** or **router** brings back the fields you last used there.
 
@@ -51,7 +51,7 @@ Every address in the form has three parts:
 - The button reads **Connect** (client), **Open session** (peer) or **Start router** (router). It is disabled while a field shows an error, and while a connection attempt is running.
 - Pressing it saves the settings on the device and opens the session. If a session is already open, the app closes it first. To apply changes to an open session, press the button again.
 - The status line under the button shows `disconnected`, `connecting…`, a summary of the open session (for example `client · tcp/10.0.2.2:7447` or `peer · scouting · ws:8000`), or the error message.
-- Once the session is open, the app goes to Topics. When you come back here, **Disconnect** closes the session and **Topics** returns to the list.
+- Once the session is open, the app goes to Topics. When you come back here, **Disconnect** closes the session, **sb io** opens the swarmbotix io screen and **Topics** returns to the list.
 - The receipt icon in the top bar opens the **Session log**. It lists system events, newest first: sessions opening and closing (including the exact zenoh config that was sent), discovery starting or failing, and viewers subscribing. Received data is not logged. **Clear** empties the log.
 
 ## Topics
@@ -71,8 +71,8 @@ Every address in the form has three parts:
 The chip says how the app will draw the payload: `json`, `text`, `image/jpeg`, `image/png`, `protobuf`, `flatbuffers` or `binary`. It shows `…` until the first sample arrives.
 
 - If the publisher set a zenoh encoding of `image/jpeg`, `image/png`, `application/json` or `text/plain`, the app uses it. It uses JSON and text only when the bytes really are valid JSON or UTF-8.
-- A zenoh encoding of `application/protobuf` gives `protobuf`. The schema after the semicolon names the message, for example `application/protobuf;zenoh_demo.Imu`. Protobuf bytes do not say what they are, so without this encoding they are treated like any other bytes and usually show as `binary`.
-- A zenoh encoding of `application/flatbuffers` gives `flatbuffers`. zenoh has no built-in FlatBuffers encoding, so the publisher writes this string itself, with the root table after the semicolon, for example `application/flatbuffers;zenoh_demo.Imu`. FlatBuffers bytes do not say what they are either, so without this encoding they usually show as `binary`.
+- A zenoh encoding of `application/protobuf` gives `protobuf`. The schema after the semicolon names the message by its sb vault type, for example `application/protobuf;ros2/sensor_msgs/Imu` (a bare protobuf name such as `sensor_msgs.Imu` works too). Protobuf bytes do not say what they are, so without this encoding they are treated like any other bytes and usually show as `binary`.
+- A zenoh encoding of `application/flatbuffers` gives `flatbuffers`. zenoh has no built-in FlatBuffers encoding, so the publisher writes this string itself, with the root table's vault type after the semicolon, for example `application/flatbuffers;ros2/sensor_msgs/Temperature`. FlatBuffers bytes do not say what they are either, so without this encoding they usually show as `binary`.
 - Otherwise the app looks at the bytes. A JPEG or PNG signature means an image. Valid UTF-8 that parses as JSON is `json`. Other UTF-8 text is `text`. Anything else is `binary`. An empty payload counts as text.
 - The type is detected once, from the first non-empty sample. If a publisher changes format, close the viewer and open it again. The Topics list keeps the old type until the row expires.
 
@@ -93,8 +93,9 @@ The app updates one card in place:
 - **json**: pretty-printed. Scroll sideways to read long lines.
 - **text**: wrapped. An empty sample shows `(empty payload)`.
 - **image**: scaled to fit the card. Images larger than 200 KB are decoded in the background, so a spinner shows until the first one is ready. If the bytes are not a valid image, the card shows `cannot decode image`.
-- **protobuf**: when the schema names a message the app knows (the ones in `tools/proto/demo.proto`: `zenoh_demo.Imu`, `zenoh_demo.Image` and `zenoh_demo.Raw`), the sample is decoded and shown as pretty-printed JSON. An image inside the message, such as the JPEG in a `zenoh_demo.Image`, is drawn. When the schema is missing or names an unknown message, the card shows the schema name and a hex dump like **binary**.
-- **flatbuffers**: when the schema names a table the app knows (the one in `tools/fbs/demo.fbs`: `zenoh_demo.Imu`), the sample is decoded and shown as pretty-printed JSON. When the schema is missing or names an unknown table, the card shows the schema name and a hex dump like **binary**.
+- **protobuf**: when the schema names a message the app knows (`ros2/sensor_msgs/Imu`, `ros2/sensor_msgs/CompressedImage`, `ros2/sensor_msgs/Image`, `ros2/std_msgs/String`, `ros2/std_msgs/UInt8MultiArray`, `ros2/custom/MarkerDetections`, `ros2/custom/CubePoses`, and the messages they contain such as `ros2/std_msgs/Header`), the sample is decoded and shown as pretty-printed JSON. The bare protobuf name works too (`sensor_msgs.Imu`, `swarmbotix.custom.CubePoses`). This covers the ws-ips marker pipeline as well: `elcom/ws_ips/ips_detect-sbNN/zenoh/markers` and `elcom/ws_ips/ips_track/zenoh/cube_poses` carry the same tags as the test publisher's `markers` and `cube_poses`, so they decode when opened from Topics. The first non-empty bytes field is shown under the JSON: drawn when it holds a JPEG or PNG, such as `data` in a `sensor_msgs/CompressedImage`, otherwise as a hex dump (the 256 bytes of a `std_msgs/UInt8MultiArray`). A `sensor_msgs/Image` is drawn from its raw pixels instead (see the next item). When the schema is missing or names an unknown message, the card shows the schema name and a hex dump like **binary**.
+- **raw image** (`ros2/sensor_msgs/Image`): the fields as JSON, with `data` shown as `<N bytes>`, a chip such as `640x512 mono8`, and the image under them, scaled to fit. The pixels are converted in the background, so a spinner shows until the first frame is ready; when frames arrive faster than they are converted, only the newest is drawn. `mono8` is drawn grey, `rgb8`, `bgr8`, `rgba8` and `bgra8` in colour (alpha is ignored), and `mono16` grey, stretched per frame from its darkest to its brightest pixel (best effort). Padding at the end of each row (`step` beyond the row's pixels) is skipped. When a frame cannot be drawn, the JSON stays and a red line says why: `cannot draw image: unsupported encoding "yuv422"`, `… step 1000 is less than width × 3 = 1920`, or `… data is 1000 bytes, less than step × height = 327680`. This covers the ws-ips image relay too: `elcom/ws_ips/ips_image_relay-sbNN/zenoh/image` and `…/debug_image` for every instance `sb00` to `sb03` decode when opened from Topics.
+- **flatbuffers**: when the schema names a table the app knows (`ros2/sensor_msgs/Temperature`), the sample is decoded and shown as pretty-printed JSON. When the schema is missing or names an unknown table, the card shows the schema name and a hex dump like **binary**.
 - **binary**: a hex dump of the first 64 bytes, with an ASCII column and the total size.
 - Text and JSON longer than 64 K characters are cut off on screen. Copying still gives you the whole payload.
 
@@ -111,13 +112,26 @@ If the session closes while you are viewing, the card is replaced by `Session cl
 
 The app is not told when a router goes away. The strip still shows the session as open, PUB HZ falls to 0, and the card keeps the last sample.
 
+## swarmbotix io
+
+This screen shows eleven topics through the subscribers that `sb io` generated into `lib/swarmbotix_io/subscribers/` from `sb.module.yaml`: nine of the sb test publisher `pubsub_flutter` (in the ws-icp repo) and two of the ws-ips image relay. It opens them on the app's session when it opens, and closes them when you leave it or the session closes; if the session opens again while the screen is up, it opens them again.
+
+- The line at the top reads `module zenoh_flutter · N of 11 subscribers open`.
+- The topics are, in order, `imu`, `temperature`, `chatter`, `cam`, `raw`, `markers` (`ros2/custom/MarkerDetections`), `cube_poses` (`ros2/custom/CubePoses`), `image` and `debug_image` (`ros2/sensor_msgs/Image`, 640x512 `mono8` and `rgb8` from the test publisher), then `relay_image` and `relay_debug_image` (the same type, from instance `sb00` of the ws-ips image relay: `elcom/ws_ips/ips_image_relay-sb00/zenoh/image` and `…/debug_image`). `markers` and `cube_poses` are only the test publisher's keys: the ws-ips `markers` and `cube_poses` keys are not opened here, open them from Topics instead. Likewise, the relay instances `sb01` to `sb03` are not opened here; open them from Topics.
+- The relay cards show `Waiting for samples…` until the relay publishes; that is expected while it is not running.
+- The image cards draw their frames as the Viewer does (see **raw image** under [The card](#the-card)).
+- Each topic shows its entry name, its key, the payload type and the vault type, then the PUB HZ, DRAW HZ and LAST meters and the payload card, as in the Viewer. The card is updated at most every 33 ms with the newest sample.
+- The line under each card reads `#count · time · wire <encoding>`: the samples received since the subscriber opened, when the sample on screen arrived, and the zenoh encoding it arrived with. The card is decoded with the type and encoding from `sb.module.yaml` whatever that encoding says; the line turns red when it differs from the wire tag sb's publisher stamps (`application/protobuf;ros2/sensor_msgs/Imu` for `imu`, and so on).
+- Tap a topic's title to open its key in the Viewer, with its own subscription. The cards stop updating while the Viewer covers this screen.
+- `Subscribe failed` under a topic shows why its subscriber could not be declared. The session log lists each `sb io subscribed to …` and `sb io closed N subscribers`.
+
 ## Troubleshooting
 
 **No topics appear** (`Waiting for samples on **…`)
 - Something has to publish. A key appears only after a sample arrives.
 - Check that the discovery scope covers the key. For example, `test/**` does not match `demo/x`.
 - Open the session log. Look for `Discovery listening on <scope>`, or for an error such as an invalid discovery scope.
-- To get test data, run `python3 tools/test_publisher.py` on the computer that runs the router (it needs `pip install eclipse-zenoh protobuf flatbuffers pillow`). It connects to `tcp/localhost:7447`.
+- To get test data, run the sb test publisher from the root of the ws-icp repo: `python3 pubsub_flutter/main.py` (once: `pip install -r pubsub_flutter/requirements.txt`). It is a zenoh peer: a phone on the same LAN finds it by scouting. In the emulator, keep the app in peer mode with **Connect to (optional)** set to `10.0.2.2` and run a zenoh router on the computer, which the publisher reaches by scouting (or with `--connect tcp/127.0.0.1:7447`). Its keys start with `elcom/ws_icp/pubsub_flutter/zenoh/`, so the default scope `**` covers them.
 
 **Connection fails on the Android emulator**
 - Use `10.0.2.2`, the host computer. Inside the emulator, `127.0.0.1` and `localhost` mean the emulator itself.
@@ -141,6 +155,10 @@ The app is not told when a router goes away. The strip still shows the session a
 - Tap the connection strip to go back to Session. Open the session again, then open the topic again from Topics.
 - `Subscription closed` means the subscription ended on its own. `Subscribe failed` shows the error, for example an invalid key expression.
 - If the router stopped and data does not come back when it is up again, press the button on Session to reopen the session.
+
+**An image card shows `cannot draw image`**
+- The line after it says why. The publisher sent an encoding other than `mono8`, `mono16`, `rgb8`, `bgr8`, `rgba8` or `bgra8`, or sizes that do not match: `step` must be at least `width` times the bytes per pixel, and `data` at least `step * height` bytes.
+- `cannot draw image (640x512 mono8)` without a reason means the frame passed those checks but the engine could not make an image of it.
 
 **The button is greyed out**
 - A field shows an error. Common causes: an empty host or discovery scope, a port outside 1–65535 (0–65535 for peer listen rows), no listen row on in router mode, or the ws/tcp port clash.

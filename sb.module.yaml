@@ -1,0 +1,49 @@
+module: zenoh_flutter
+language: flutter
+io_dir: lib/swarmbotix_io
+subscribers:
+  imu:
+    key: elcom/ws_icp/pubsub_flutter/zenoh/imu
+    type: ros2/sensor_msgs/Imu
+    transport: zenoh
+  temperature:
+    key: elcom/ws_icp/pubsub_flutter/zenoh/temperature
+    type: ros2/sensor_msgs/Temperature
+    transport: zenoh
+    encoding: fb
+  chatter:
+    key: elcom/ws_icp/pubsub_flutter/zenoh/chatter
+    type: ros2/std_msgs/String
+    transport: zenoh
+  cam:
+    key: elcom/ws_icp/pubsub_flutter/zenoh/cam
+    type: ros2/sensor_msgs/CompressedImage
+    transport: zenoh
+  raw:
+    key: elcom/ws_icp/pubsub_flutter/zenoh/raw
+    type: ros2/std_msgs/UInt8MultiArray
+    transport: zenoh
+  markers:
+    key: elcom/ws_icp/pubsub_flutter/zenoh/markers
+    type: ros2/custom/MarkerDetections
+    transport: zenoh
+  cube_poses:
+    key: elcom/ws_icp/pubsub_flutter/zenoh/cube_poses
+    type: ros2/custom/CubePoses
+    transport: zenoh
+  image:
+    key: elcom/ws_icp/pubsub_flutter/zenoh/image
+    type: ros2/sensor_msgs/Image
+    transport: zenoh
+  debug_image:
+    key: elcom/ws_icp/pubsub_flutter/zenoh/debug_image
+    type: ros2/sensor_msgs/Image
+    transport: zenoh
+  relay_image:
+    key: elcom/ws_ips/ips_image_relay-sb00/zenoh/image
+    type: ros2/sensor_msgs/Image
+    transport: zenoh
+  relay_debug_image:
+    key: elcom/ws_ips/ips_image_relay-sb00/zenoh/debug_image
+    type: ros2/sensor_msgs/Image
+    transport: zenoh

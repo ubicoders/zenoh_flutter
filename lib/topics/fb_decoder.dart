@@ -1,43 +1,62 @@
 import 'dart:typed_data';
 
 import 'package:flat_buffers/flat_buffers.dart' as fb;
-import 'package:zenoh_flutter/fbs/demo_zenoh_demo_generated.dart' as demo;
+import 'package:zenoh_flutter/fbs/ros2/Header_std_msgs_generated.dart'
+    as std_msgs;
+import 'package:zenoh_flutter/fbs/ros2/Temperature_sensor_msgs_generated.dart'
+    as sensor_msgs;
+import 'package:zenoh_flutter/fbs/ros2/Time_builtin_interfaces_generated.dart'
+    as builtin_interfaces;
 import 'package:zenoh_flutter/topics/decoded_message.dart';
 
 /// Decodes a whole FlatBuffer whose root is one particular table. May throw
 /// on malformed bytes; [decodeFlatBuffer] catches.
 typedef FbMessageDecoder = DecodedMessage Function(Uint8List bytes);
 
-/// Every FlatBuffers root table the viewer can decode, keyed by its fully
-/// qualified name (e.g. `zenoh_demo.Imu`), as named in the
-/// `application/flatbuffers;<name>` zenoh encoding.
+/// Every FlatBuffers root table the viewer can decode, keyed by its sb vault
+/// name (e.g. `ros2/sensor_msgs/Temperature`), as named in the
+/// `application/flatbuffers;<name>` zenoh encoding that sb publishers stamp.
+/// Each table is also reachable by its bare FlatBuffers name
+/// (`sensor_msgs.Temperature`).
 ///
 /// Unlike `protoMessages` (proto_decoder.dart), every table needs its own
 /// entry here with a short hand-written converter to JSON fields:
 /// FlatBuffers has no runtime reflection in Dart, so the code flatc
 /// generates has typed getters but no way to list a table's fields or
-/// their names. After adding a root table to `tools/fbs/demo.fbs` and
-/// regenerating `lib/fbs/`, add a [_table] line and a converter below. A
-/// table carrying a byte vector (e.g. an encoded image) can be a function
-/// that passes it as the `blob` of [DecodedMessage.fromFields] instead, so it
-/// is drawn like the image inside a protobuf message.
+/// their names. After adding a message to `FB_MESSAGES` in
+/// `tools/gen_ros2_messages.sh` and regenerating `lib/fbs/ros2/`, add a
+/// [_table] line and a converter below. A table carrying a byte vector
+/// (e.g. an encoded image) can be a function that passes it as the `blob` of
+/// [DecodedMessage.fromFields] instead, so it is drawn like the image inside
+/// a protobuf message.
 final Map<String, FbMessageDecoder> fbMessages = Map.unmodifiable(
-  Map.fromEntries([_table('zenoh_demo.Imu', demo.Imu.reader, _imu)]),
+  Map.fromEntries([
+    ..._table(
+      'ros2/sensor_msgs/Temperature',
+      sensor_msgs.Temperature.reader,
+      _temperature,
+    ),
+  ]),
 );
 
-/// The [fbMessages] entry for root table [schema]: reads it with [reader]
-/// and shows it as the JSON map [fields] builds.
-MapEntry<String, FbMessageDecoder> _table<T>(
+/// The [fbMessages] entries for root table [schema] (a vault name
+/// `<style>/<ns>/<Leaf>`), under that name and under `<ns>.<Leaf>`: reads it
+/// with [reader] and shows it as the JSON map [fields] builds.
+List<MapEntry<String, FbMessageDecoder>> _table<T>(
   String schema,
   fb.Reader<T> reader,
   Map<String, Object?> Function(T table) fields,
-) => MapEntry(
-  schema,
-  (bytes) => DecodedMessage.fromFields(
+) {
+  DecodedMessage decode(Uint8List bytes) => DecodedMessage.fromFields(
     schema: schema,
     fields: fields(reader.read(_bufferOf(bytes), 0)),
-  ),
-);
+  );
+  final qualified = schema.substring(schema.indexOf('/') + 1);
+  return [
+    MapEntry(schema, decode),
+    MapEntry(qualified.replaceAll('/', '.'), decode),
+  ];
+}
 
 // Memoised per payload object so periodic rebuilds don't re-decode. The
 // schema is kept alongside since the result depends on it.
@@ -112,33 +131,28 @@ bool _plausibleRoot(Uint8List bytes) {
 fb.BufferContext _bufferOf(Uint8List bytes) =>
     fb.BufferContext(ByteData.sublistView(bytes));
 
-// Converters, one per table or struct. Struct fields that are not set are
-// left out, as unset message fields are in proto3 JSON; scalars read their
-// schema default when not set, so they are always present.
+// Converters, one per table. `flatc --proto` turns every proto message into
+// a table, so a nested message is a sub-table: one that is not set is left
+// out, as unset message fields are in proto3 JSON, and so is an unset
+// string. Scalars read their schema default when not set, so they are
+// always present. Field names are lowerCamelCase as in proto3 JSON.
 
-Map<String, Object?> _imu(demo.Imu imu) => {
-  if (imu.header case final header?) 'header': _header(header),
-  if (imu.accel case final accel?) 'accel': _vector3(accel),
-  if (imu.gyro case final gyro?) 'gyro': _vector3(gyro),
-  'temp': _double(imu.temp),
+Map<String, Object?> _temperature(sensor_msgs.Temperature t) => {
+  if (t.header case final header?) 'header': _header(header),
+  'temperature': _double(t.temperature),
+  'variance': _double(t.variance),
 };
 
-Map<String, Object?> _header(demo.Header header) => {
-  'timestampNs': _uint64(header.timestampNs),
-  'seq': _uint64(header.seq),
+Map<String, Object?> _header(std_msgs.Header header) => {
+  if (header.stamp case final stamp?) 'stamp': _time(stamp),
+  'frameId': ?header.frameId,
 };
 
-Map<String, Object?> _vector3(demo.Vector3 v) => {
-  'x': _double(v.x),
-  'y': _double(v.y),
-  'z': _double(v.z),
+Map<String, Object?> _time(builtin_interfaces.Time time) => {
+  'sec': time.sec,
+  'nanosec': time.nanosec,
 };
 
 /// [value] as JSON: non-finite values, which JSON has no number for, become
 /// `"NaN"`, `"Infinity"` or `"-Infinity"` as in proto3 JSON.
 Object _double(double value) => value.isFinite ? value : value.toString();
-
-/// A uint64 field as JSON. Dart ints are signed 64-bit, so values from 2^63
-/// up read back negative; those are shown as their unsigned decimal string.
-Object _uint64(int value) =>
-    value >= 0 ? value : BigInt.from(value).toUnsigned(64).toString();

@@ -380,12 +380,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 onPressed: _controller.close,
                 child: const Text('Disconnect'),
               ),
-              if (!busy)
+              if (!busy) ...[
+                TextButton(
+                  key: const Key('settings.sbio'),
+                  onPressed: () => Navigator.pushNamed(context, '/sbio'),
+                  child: const Text('sb io'),
+                ),
                 TextButton(
                   key: const Key('settings.topics'),
                   onPressed: () => Navigator.pushNamed(context, '/topics'),
                   child: const Text('Topics'),
                 ),
+              ],
             ],
           ),
       ],

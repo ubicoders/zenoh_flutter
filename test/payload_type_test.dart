@@ -33,14 +33,14 @@ void main() {
     expect(
       detectPayloadType(
         jpegLike,
-        encoding: 'application/protobuf;zenoh_demo.Image',
+        encoding: 'application/protobuf;ros2/sensor_msgs/CompressedImage',
       ),
       PayloadType.protobuf,
     );
     expect(
       detectPayloadType(
         utf8.encode('{"x": 1}'),
-        encoding: 'application/flatbuffers;zenoh_demo.Imu',
+        encoding: 'application/flatbuffers;ros2/sensor_msgs/Temperature',
       ),
       PayloadType.flatbuffers,
     );
@@ -52,12 +52,12 @@ void main() {
 
   test('messageSchemaOf reads the schema suffix', () {
     expect(
-      messageSchemaOf('application/protobuf;zenoh_demo.Imu'),
-      'zenoh_demo.Imu',
+      messageSchemaOf('application/protobuf;ros2/sensor_msgs/Imu'),
+      'ros2/sensor_msgs/Imu',
     );
     expect(
-      messageSchemaOf('application/flatbuffers; zenoh_demo.Imu '),
-      'zenoh_demo.Imu',
+      messageSchemaOf('application/flatbuffers; sensor_msgs.Temperature '),
+      'sensor_msgs.Temperature',
     );
     expect(messageSchemaOf('application/protobuf'), isNull);
     expect(messageSchemaOf('application/json;schema'), isNull);

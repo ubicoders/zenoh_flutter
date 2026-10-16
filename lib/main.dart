@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:zenoh_flutter/pages/sbio_page.dart';
 import 'package:zenoh_flutter/pages/settings_page.dart';
 import 'package:zenoh_flutter/pages/topics_page.dart';
 import 'package:zenoh_flutter/pages/viewer_page.dart';
@@ -33,6 +34,7 @@ class ZenohApp extends StatelessWidget {
       routes: {
         '/settings': (_) => const SettingsPage(),
         '/topics': (_) => const TopicsPage(),
+        '/sbio': (_) => const SbioPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/view') {

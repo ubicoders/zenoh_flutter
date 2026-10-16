@@ -1,6 +1,6 @@
 // This is a generated file - do not edit.
 //
-// Generated from demo.proto.
+// Generated from builtin_interfaces/Time.proto.
 
 // @dart = 3.3
 

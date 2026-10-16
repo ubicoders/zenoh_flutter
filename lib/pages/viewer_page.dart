@@ -10,6 +10,7 @@ import 'package:zenoh_flutter/topics/info_chip.dart';
 import 'package:zenoh_flutter/topics/message_decoder.dart';
 import 'package:zenoh_flutter/topics/payload_type.dart';
 import 'package:zenoh_flutter/topics/rate_counter.dart';
+import 'package:zenoh_flutter/topics/raw_image.dart';
 import 'package:zenoh_flutter/widgets/connection_strip.dart';
 import 'package:zenoh_flutter/widgets/payload_card.dart';
 import 'package:zenoh_flutter/widgets/rate_meter.dart';
@@ -33,7 +34,9 @@ class _ViewerPageState extends State<ViewerPage> {
 
   /// Images bigger than this are decoded here (off the UI thread, newest
   /// frame wins) instead of by [Image.memory]. For a protobuf or FlatBuffers
-  /// sample this is the size of the image inside the message.
+  /// sample this is the size of the image inside the message. Uncompressed
+  /// images (`sensor_msgs/Image`) are always converted here, whatever their
+  /// size.
   static const _largeImageBytes = 200 * 1024;
 
   final _session = SessionController.instance;
@@ -67,10 +70,12 @@ class _ViewerPageState extends State<ViewerPage> {
   bool _typeFromEmpty = false;
   DateTime _lastBuild = DateTime.fromMillisecondsSinceEpoch(0);
 
-  // Large-image path. [_decoded] is owned here and belongs to [_shown].
+  // Large-image and raw-image path. [_decoded] is owned here and belongs to
+  // [_shown]. [_rgba] is reused by every raw-pixel conversion (one at a time).
   ui.Image? _decoded;
   bool _decodeFailed = false;
   bool _decoding = false;
+  final RgbaBuffer _rgba = RgbaBuffer();
 
   @override
   void initState() {
@@ -148,7 +153,7 @@ class _ViewerPageState extends State<ViewerPage> {
         _type = detectPayloadType(latest.payload, encoding: latest.encoding);
         _typeFromEmpty = latest.payload.isEmpty;
       }
-      if (_isLargeImage(latest)) {
+      if (_decodesHere(latest)) {
         _startDecode(); // presents when the decode finishes
       } else {
         _present(latest, latestAt, _seq);
@@ -202,9 +207,16 @@ class _ViewerPageState extends State<ViewerPage> {
   }
 
   Future<void> _decode(ZenohSample sample, DateTime at, int seq) async {
-    final data = _imageOf(sample);
+    final raw = _drawableRawImageOf(sample);
+    final data = raw == null ? _imageOf(sample) : null;
     ui.Image? image;
-    if (data != null) {
+    if (raw != null) {
+      try {
+        image = await decodeRawImage(raw, scratch: _rgba);
+      } catch (_) {
+        image = null;
+      }
+    } else if (data != null) {
       try {
         final codec = await ui.instantiateImageCodec(data);
         try {
@@ -223,7 +235,7 @@ class _ViewerPageState extends State<ViewerPage> {
     }
     _present(sample, at, seq, image: image, failed: image == null);
     final next = _consumed;
-    if (next != null && !identical(next, sample) && _isLargeImage(next)) {
+    if (next != null && !identical(next, sample) && _decodesHere(next)) {
       _startDecode();
     }
   }
@@ -235,7 +247,19 @@ class _ViewerPageState extends State<ViewerPage> {
     return type == null ? null : imageBytesOf(s.payload, type, s.encoding);
   }
 
-  bool _isLargeImage(ZenohSample s) =>
+  /// The uncompressed image [s] carries when it can be drawn (a
+  /// `sensor_msgs/Image` with consistent sizes), or null. One that cannot is
+  /// presented as is, and the card says why.
+  RawImageFrame? _drawableRawImageOf(ZenohSample s) {
+    final type = _type;
+    final raw = type == null ? null : rawImageOf(s.payload, type, s.encoding);
+    return raw != null && raw.isDrawable ? raw : null;
+  }
+
+  /// Whether [s] is decoded here before it is shown: a large encoded image,
+  /// or any drawable uncompressed one.
+  bool _decodesHere(ZenohSample s) =>
+      _drawableRawImageOf(s) != null ||
       (_imageOf(s)?.length ?? 0) > _largeImageBytes;
 
   /// The image bytes [Image.memory] decodes (and caches) for [s], or null.
@@ -351,7 +375,7 @@ class _ViewerPageState extends State<ViewerPage> {
     final shown = _shown;
     final shownAt = _shownAt;
     final type = _type;
-    final large = shown != null && _isLargeImage(shown);
+    final decodedHere = shown != null && _decodesHere(shown);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -369,9 +393,9 @@ class _ViewerPageState extends State<ViewerPage> {
             type: type,
             encoding: shown.encoding,
             paused: _paused,
-            decodedImage: large ? _decoded : null,
-            externalDecode: large,
-            decodeFailed: large && _decodeFailed,
+            decodedImage: decodedHere ? _decoded : null,
+            externalDecode: decodedHere,
+            decodeFailed: decodedHere && _decodeFailed,
           ),
         const SizedBox(height: 8),
         Text(

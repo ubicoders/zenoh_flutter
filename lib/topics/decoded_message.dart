@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:zenoh_flutter/topics/payload_type.dart';
+import 'package:zenoh_flutter/topics/raw_image.dart';
 
 /// A structured message (protobuf or FlatBuffers) decoded for display.
 class DecodedMessage {
@@ -11,6 +12,7 @@ class DecodedMessage {
     this.blob,
     this.blobType,
     this.blobField,
+    this.rawImage,
   });
 
   /// Pretty-prints [fields] (a JSON-encodable value, normally a map) and
@@ -20,6 +22,7 @@ class DecodedMessage {
     required Object? fields,
     String? blobField,
     Uint8List? blob,
+    RawImageFrame? rawImage,
   }) {
     final PayloadType? blobType;
     if (blob == null) {
@@ -34,10 +37,12 @@ class DecodedMessage {
       blob: blob,
       blobType: blobType,
       blobField: blobField,
+      rawImage: rawImage,
     );
   }
 
-  /// Fully qualified message name, e.g. `zenoh_demo.Imu`.
+  /// The message type as the encoding named it: the sb vault name, e.g.
+  /// `ros2/sensor_msgs/Imu`, or a bare `sensor_msgs.Imu`.
   final String schema;
 
   /// The message as JSON, indented by two spaces: proto3 JSON for protobuf,
@@ -59,4 +64,10 @@ class DecodedMessage {
 
   /// True when [blob] is an encoded image.
   bool get hasImage => isImagePayload(blobType);
+
+  /// The uncompressed image the message is (a `sensor_msgs/Image`), or null
+  /// for every other message. Set even when the frame cannot be drawn; see
+  /// [RawImageFrame.problem]. Its pixels are also [blob] (a raw frame is
+  /// never [hasImage]).
+  final RawImageFrame? rawImage;
 }

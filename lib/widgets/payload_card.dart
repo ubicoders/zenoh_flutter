@@ -8,6 +8,7 @@ import 'package:zenoh_flutter/topics/format.dart';
 import 'package:zenoh_flutter/topics/info_chip.dart';
 import 'package:zenoh_flutter/topics/message_decoder.dart';
 import 'package:zenoh_flutter/topics/payload_type.dart';
+import 'package:zenoh_flutter/topics/raw_image.dart';
 
 /// Renders one payload according to its [PayloadType].
 ///
@@ -30,15 +31,20 @@ class PayloadCard extends StatelessWidget {
 
   /// The zenoh encoding of [bytes]. For [PayloadType.protobuf] and
   /// [PayloadType.flatbuffers] its schema suffix
-  /// (`application/flatbuffers;zenoh_demo.Imu`) picks the message type.
+  /// (`application/flatbuffers;ros2/sensor_msgs/Temperature`) picks the
+  /// message type.
   final String? encoding;
 
   /// Shows a "PAUSED" chip in the top-right corner.
   final bool paused;
 
-  /// Image types only: a frame the caller already decoded (e.g. off the UI
+  /// Image types: a frame the caller already decoded (e.g. off the UI
   /// thread for large images). Painted instead of decoding the image bytes
   /// ([imageBytesOf]). The caller owns it and disposes it.
+  ///
+  /// A message holding raw pixels (a `sensor_msgs/Image`, [rawImageOf]) is
+  /// drawn from this alone: the caller converts it ([decodeRawImage]), this
+  /// card never does, and shows a spinner until it is set.
   final ui.Image? decodedImage;
 
   /// Image types only: the caller decodes the image bytes ([imageBytesOf])
@@ -46,7 +52,8 @@ class PayloadCard extends StatelessWidget {
   /// (or, with [decodeFailed], an error) is shown.
   final bool externalDecode;
 
-  /// Image types only, with [externalDecode]: decoding failed.
+  /// Image types with [externalDecode], and raw-pixel messages: decoding
+  /// failed.
   final bool decodeFailed;
 
   /// Text and JSON longer than this are truncated on screen (not on copy).
@@ -123,9 +130,9 @@ class PayloadCard extends StatelessWidget {
   }
 
   /// A protobuf or FlatBuffers message: its schema, then the fields as
-  /// JSON, then the image or hex dump of its bytes field (if any). Falls back
-  /// to a hex dump of the raw payload when the message type is unknown or
-  /// the bytes are bad.
+  /// JSON, then the image or hex dump of its bytes field (if any), or the
+  /// uncompressed image the message is. Falls back to a hex dump of the raw
+  /// payload when the message type is unknown or the bytes are bad.
   Widget _messageBody(BuildContext context, double maxHeight) {
     final theme = Theme.of(context);
     final schema = messageSchemaOf(encoding);
@@ -156,6 +163,7 @@ class PayloadCard extends StatelessWidget {
 
     final blob = decoded.blob;
     final field = decoded.blobField;
+    final raw = decoded.rawImage;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -164,12 +172,23 @@ class PayloadCard extends StatelessWidget {
           runSpacing: 4,
           children: [
             InfoChip(decoded.schema, emphasized: true),
+            if (raw != null) InfoChip(raw.label),
             if (blob != null && field != null)
               InfoChip('$field · ${formatBytes(blob.length)}'),
           ],
         ),
         const SizedBox(height: 8),
-        if (blob != null && decoded.hasImage) ...[
+        if (raw != null) ...[
+          _JsonBody(text: decoded.fieldsJson, maxHeight: maxHeight * 0.3),
+          const SizedBox(height: 8),
+          if (raw.problem case final problem?)
+            _errorLine(context, 'cannot draw image: $problem')
+          else
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: Center(heightFactor: 1, child: _rawImage(context, raw)),
+            ),
+        ] else if (blob != null && decoded.hasImage) ...[
           _JsonBody(text: decoded.fieldsJson, maxHeight: maxHeight * 0.3),
           const SizedBox(height: 8),
           ConstrainedBox(
@@ -209,12 +228,31 @@ class PayloadCard extends StatelessWidget {
     );
   }
 
-  Widget _imageError(BuildContext context, Uint8List data) {
+  /// Draws the uncompressed image [frame] from [decodedImage], which the
+  /// caller makes from it.
+  Widget _rawImage(BuildContext context, RawImageFrame frame) {
+    final image = decodedImage;
+    if (image != null) {
+      return RawImage(image: image, fit: BoxFit.contain);
+    }
+    if (decodeFailed) {
+      return _errorLine(context, 'cannot draw image (${frame.label})');
+    }
+    return const SizedBox(
+      height: 120,
+      child: Center(child: CircularProgressIndicator()),
+    );
+  }
+
+  Widget _imageError(BuildContext context, Uint8List data) =>
+      _errorLine(context, 'cannot decode image (${data.length} bytes)');
+
+  Widget _errorLine(BuildContext context, String text) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Text(
-        'cannot decode image (${data.length} bytes)',
+        text,
         style: theme.textTheme.bodyMedium?.copyWith(
           color: theme.colorScheme.error,
         ),

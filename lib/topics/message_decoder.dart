@@ -4,11 +4,13 @@ import 'package:zenoh_flutter/topics/decoded_message.dart';
 import 'package:zenoh_flutter/topics/fb_decoder.dart';
 import 'package:zenoh_flutter/topics/payload_type.dart';
 import 'package:zenoh_flutter/topics/proto_decoder.dart';
+import 'package:zenoh_flutter/topics/raw_image.dart';
 
 /// Decodes a structured-message payload for display: [decodeProto] for
 /// [PayloadType.protobuf], [decodeFlatBuffer] for [PayloadType.flatbuffers],
 /// with the message type taken from the schema suffix of [encoding]
-/// (`application/flatbuffers;zenoh_demo.Imu`, see [messageSchemaOf]).
+/// (`application/flatbuffers;ros2/sensor_msgs/Temperature`, see
+/// [messageSchemaOf]).
 ///
 /// Null for any other [type], when [encoding] names no message type, or when
 /// [bytes] cannot be decoded as it. Memoised per payload.
@@ -46,3 +48,17 @@ Uint8List? imageBytesOf(Uint8List bytes, PayloadType type, String? encoding) =>
         _ => null,
       },
     };
+
+/// The uncompressed image a payload of [type] holds (a protobuf
+/// `sensor_msgs/Image`, its [DecodedMessage.rawImage]), or null. Check
+/// [RawImageFrame.isDrawable] before converting it: a frame with bad sizes
+/// or an unknown encoding is returned too, so the card can say why.
+///
+/// The parallel of [imageBytesOf] for raw pixels, which [imageBytesOf]
+/// never returns: they are drawn from a `ui.Image` the caller makes with
+/// [decodeRawImage], not by `Image.memory`.
+RawImageFrame? rawImageOf(
+  Uint8List bytes,
+  PayloadType type,
+  String? encoding,
+) => decodeMessage(bytes, type, encoding)?.rawImage;
