@@ -384,7 +384,8 @@ class _StatusPanel extends StatelessWidget {
               Text(
                 'PUB ${formatHz(pubHz)} · DRAW ${formatHz(drawHz)}'
                 '${f == null ? '' : ' · frame ${f.frameSeq}'}'
-                '${latency == null ? '' : ' · latency $latency ms'}',
+                '${latency == null ? '' : ' · latency $latency ms'}'
+                '${f == null ? '' : ' · axes ${f.frame}${f.frameKnown ? '' : '?'}'}',
                 style: mono,
               ),
               if (decodeError != null)

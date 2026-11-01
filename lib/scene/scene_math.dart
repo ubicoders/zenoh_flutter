@@ -61,6 +61,39 @@ class M3 {
 
   /// Column [c]: the c-th body axis expressed in the parent frame.
   V3 col(int c) => V3(m[c], m[3 + c], m[6 + c]);
+
+  M3 get transposed =>
+      M3([m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]]);
+
+  /// `this * o`.
+  M3 mul(M3 o) => M3([
+    for (var r = 0; r < 3; r++)
+      for (var c = 0; c < 3; c++)
+        m[3 * r] * o.m[c] +
+            m[3 * r + 1] * o.m[3 + c] +
+            m[3 * r + 2] * o.m[6 + c],
+  ]);
+
+  /// XYZ Euler degrees (`R = Rx * Ry * Rz`), the tracker's `euler_deg`
+  /// convention.
+  V3 eulerXyzDeg() {
+    final sy = m[2].clamp(-1.0, 1.0);
+    final ry = math.asin(sy);
+    final cy = math.sqrt(1.0 - sy * sy);
+    final double rx, rz;
+    if (cy > 1e-6) {
+      rx = math.atan2(-m[5], m[8]);
+      rz = math.atan2(-m[1], m[0]);
+    } else if (sy > 0) {
+      rx = math.atan2(m[3], m[4]);
+      rz = 0;
+    } else {
+      rx = math.atan2(-m[3], m[4]);
+      rz = 0;
+    }
+    const d = 180 / math.pi;
+    return V3(rx * d, ry * d, rz * d);
+  }
 }
 
 /// An orbit camera: looks at [target] from [distance] metres away, turned

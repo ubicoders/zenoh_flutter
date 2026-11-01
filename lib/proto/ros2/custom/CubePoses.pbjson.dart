@@ -115,6 +115,7 @@ const CubePoses$json = {
       '6': '.swarmbotix.custom.CubePose',
       '10': 'cubes'
     },
+    {'1': 'frame', '3': 5, '4': 1, '5': 9, '10': 'frame'},
   ],
 };
 
@@ -122,4 +123,5 @@ const CubePoses$json = {
 final $typed_data.Uint8List cubePosesDescriptor = $convert.base64Decode(
     'CglDdWJlUG9zZXMSGwoJc3RhbXBfc2VjGAEgASgFUghzdGFtcFNlYxIjCg1zdGFtcF9uYW5vc2'
     'VjGAIgASgNUgxzdGFtcE5hbm9zZWMSGwoJZnJhbWVfc2VxGAMgASgEUghmcmFtZVNlcRIxCgVj'
-    'dWJlcxgEIAMoCzIbLnN3YXJtYm90aXguY3VzdG9tLkN1YmVQb3NlUgVjdWJlcw==');
+    'dWJlcxgEIAMoCzIbLnN3YXJtYm90aXguY3VzdG9tLkN1YmVQb3NlUgVjdWJlcxIUCgVmcmFtZR'
+    'gFIAEoCVIFZnJhbWU=');

@@ -294,12 +294,14 @@ class CubePoses extends $pb.GeneratedMessage {
     $core.int? stampNanosec,
     $fixnum.Int64? frameSeq,
     $core.Iterable<CubePose>? cubes,
+    $core.String? frame,
   }) {
     final result = CubePoses._();
     if (stampSec != null) result.stampSec = stampSec;
     if (stampNanosec != null) result.stampNanosec = stampNanosec;
     if (frameSeq != null) result.frameSeq = frameSeq;
     if (cubes != null) result.cubes.addAll(cubes);
+    if (frame != null) result.frame = frame;
     return result;
   }
 
@@ -325,6 +327,7 @@ class CubePoses extends $pb.GeneratedMessage {
         defaultOrMaker: $fixnum.Int64.ZERO)
     ..pPM<CubePose>(4, _omitFieldNames ? '' : 'cubes',
         subBuilder: CubePose.$_createMessage)
+    ..aOS(5, _omitFieldNames ? '' : 'frame')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -376,6 +379,18 @@ class CubePoses extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(4)
   $pb.PbList<CubePose> get cubes => $_getList(3);
+
+  /// Axis convention of every pose in `cubes`: "RDF" (the board frame), "FRD" or
+  /// "FRU", as named in ips_track's output_frame.yaml. Empty = a publisher that
+  /// predates the field, to be read as "RDF".
+  @$pb.TagNumber(5)
+  $core.String get frame => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set frame($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasFrame() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearFrame() => $_clearField(5);
 }
 
 const $core.bool _omitFieldNames =
